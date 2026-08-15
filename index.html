@@ -13,7 +13,7 @@
     <div id="emergency-banner" class="emergency-banner hidden">
         <div class="banner-content">
             <i class="fas fa-exclamation-triangle"></i>
-            <span>BÁO ĐỘNG ĐỎ! Phát hiện rò rỉ khí gas nguy hiểm hoặc mức khí độc vượt ngưỡng tại khu vực hoạt động!</span>
+            <span>BÁO ĐỘNG ĐỎ! Phát hiện rò rỉ khí gas vượt ngưỡng 500 PPM nguy hiểm tại khu vực hoạt động!</span>
             <button class="btn-dismiss" onclick="dismissEmergency()">Đã hiểu / Tắt báo động</button>
         </div>
     </div>
@@ -36,6 +36,25 @@
                 <button class="btn btn-export" onclick="exportToExcel()"><i class="fas fa-file-excel"></i> Xuất Excel / CSV</button>
             </div>
         </header>
+
+        <!-- BẢNG ĐIỀU KHIỂN GIẢ LẬP THỦ CÔNG -->
+        <section class="card simulation-panel">
+            <h2><i class="fas fa-sliders-h"></i> Bảng Điều Khiển Giả Lập Thủ Công (Test Kịch Bản Nhanh)</h2>
+            <div class="sim-controls-grid">
+                <div class="sim-group">
+                    <label>Khí Gas/Khói: <span id="lbl-sim-gas" class="sim-val">20</span> PPM (Báo động khi &ge; 500)</label>
+                    <input type="range" id="range-sim-gas" min="0" max="600" value="20" oninput="overrideGas(this.value)">
+                </div>
+                <div class="sim-group">
+                    <label>Nhiệt Độ: <span id="lbl-sim-temp" class="sim-val">30.0</span>°C</label>
+                    <input type="range" id="range-sim-temp" min="20" max="45" step="0.5" value="30" oninput="overrideTemp(this.value)">
+                </div>
+                <div class="sim-group">
+                    <label>Khoảng Cách Vật Cản: <span id="lbl-sim-dist" class="sim-val">50</span> cm</label>
+                    <input type="range" id="range-sim-dist" min="5" max="150" value="50" oninput="overrideDist(this.value)">
+                </div>
+            </div>
+        </section>
 
         <section class="metrics-grid">
             <div class="metric-card theme-green" id="card-temp">
@@ -165,7 +184,7 @@
                         <div class="dev-icon"><i class="fas fa-fan"></i></div>
                         <div class="dev-details">
                             <h4>Quạt Thông Gió Khẩn Cấp</h4>
-                            <span>Tự động bật khi rò rỉ Gas</span>
+                            <span>Tự động bật khi Gas &ge; 500 PPM</span>
                         </div>
                         <div class="status-badge">OFF</div>
                     </div>
@@ -212,7 +231,7 @@
             <div class="card">
                 <h2><i class="fas fa-terminal"></i> Nhật Ký Hoạt Động & AI Log</h2>
                 <div class="log-console" id="log-console">
-                    <p class="log-item info">[SYSTEM] Hệ thống khởi tạo thành công. Đang kết nối cảm biến...</p>
+                    <p class="log-item info">[SYSTEM] Hệ thống khởi tạo thành công. Đang chạy chế độ giả lập thông minh...</p>
                 </div>
             </div>
         </section>
