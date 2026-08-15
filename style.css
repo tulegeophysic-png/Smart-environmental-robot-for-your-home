@@ -1,12 +1,11 @@
 /* ================= BẢNG MÀU CHỦ ĐẠO ================= */
 :root {
-    --bg-color: #0f172a;         /* Nền tổng thể xanh đen */
-    --card-bg: #1e293b;          /* Nền thẻ */
-    --card-inner: #0f172a;       /* Nền trong thẻ */
+    --bg-color: #0f172a;
+    --card-bg: #1e293b;
+    --card-inner: #0f172a;
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     
-    /* Màu sắc trạng thái */
     --color-blue: #38bdf8;
     --color-green: #22c55e;
     --color-yellow: #eab308;
@@ -53,25 +52,29 @@ header { display: flex; justify-content: space-between; align-items: center; pad
 .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
 input:checked + .slider { background-color: var(--color-green); }
 input:checked + .slider:before { transform: translateX(20px); }
-#robot-state-text { font-size: 0.9rem; font-weight: bold; color: var(--color-green); width: 130px;}
+#robot-state-text { font-size: 0.9rem; font-weight: bold; color: var(--color-green); width: 130px; }
+
+/* ================= BẢNG ĐIỀU KHIỂN GIẢ LẬP ================= */
+.simulation-panel { background: rgba(30, 41, 59, 0.85); border: 1px dashed var(--color-blue); }
+.sim-controls-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 10px; font-size: 0.85rem; }
+.sim-group label { display: block; margin-bottom: 6px; color: var(--text-secondary); }
+.sim-val { color: var(--color-yellow); font-weight: bold; }
+.sim-group input[type="range"] { width: 100%; cursor: pointer; accent-color: var(--color-blue); }
 
 /* ================= THẺ CHỈ SỐ MÔI TRƯỜNG ================= */
 .metrics-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; }
 .metric-card { background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px; padding: 12px; position: relative; transition: all 0.3s; }
-.metric-info label { font-size: 0.75rem; color: var(--text-secondary); display: block; margin-bottom: 5px; font-weight: bold;}
+.metric-info label { font-size: 0.75rem; color: var(--text-secondary); display: block; margin-bottom: 5px; font-weight: bold; }
 .metric-info .value { font-size: 1.4rem; font-weight: bold; }
 .metric-info .unit { font-size: 0.75rem; color: var(--text-secondary); }
 .metric-card .icon { position: absolute; top: 12px; right: 12px; font-size: 1.3rem; opacity: 0.8; }
 
 .theme-green { border-color: var(--color-green); background: rgba(34, 197, 94, 0.05); }
 .theme-green .value { color: var(--color-green); }
-
 .theme-yellow { border-color: var(--color-yellow); background: rgba(234, 179, 8, 0.1); }
 .theme-yellow .value { color: var(--color-yellow); }
-
 .theme-red { border-color: var(--color-red); background: rgba(239, 68, 68, 0.2); animation: boxBlink 0.6s infinite alternate; }
 .theme-red .value { color: var(--color-red); }
-
 .theme-blue { border-color: var(--color-blue); background: rgba(56, 189, 248, 0.05); }
 .theme-blue .value { color: var(--color-blue); }
 
@@ -97,7 +100,7 @@ input:checked + .slider:before { transform: translateX(20px); }
 .room-box.status-warn { border-color: var(--color-yellow); background: rgba(234, 179, 8, 0.1); }
 .room-box.status-danger { border-color: var(--color-red); background: rgba(239, 68, 68, 0.2); }
 
-/* Giao diện khối trợ lý AI */
+/* Trợ lý AI */
 .assistant-interface { display: flex; flex-direction: column; gap: 10px; text-align: center; justify-content: center; height: 130px; }
 .assistant-status { font-size: 0.8rem; color: var(--color-blue); font-weight: bold; }
 .assistant-message { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; font-style: italic; font-size: 0.85rem; color: var(--text-primary); border: 1px solid var(--border-color); }
@@ -114,7 +117,7 @@ input:checked + .slider:before { transform: translateX(20px); }
 .dev-details { flex-grow: 1; }
 .dev-details h4 { font-size: 0.9rem; color: var(--text-primary); }
 .dev-details span { font-size: 0.75rem; color: var(--text-secondary); }
-.status-badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; background: #334155; color: white;}
+.status-badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; background: #334155; color: white; }
 
 .device-item.active { border-color: var(--color-green); background: rgba(34, 197, 94, 0.1); }
 .device-item.active .dev-icon { color: var(--color-green); }
