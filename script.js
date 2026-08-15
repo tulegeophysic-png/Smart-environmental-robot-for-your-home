@@ -1,7 +1,7 @@
 const CONFIG = {
     PM25_WARN: 50,
     PM25_DANGER: 100,
-    GAS_DANGER: 500, // Đã cập nhật ngưỡng báo động khí gas lên 500 PPM
+    GAS_DANGER: 500,
     TEMP_WARN: 35,
     OBSTACLE_ALERT_DIST: 20
 };
@@ -30,7 +30,7 @@ function initChart() {
             datasets: [
                 { label: 'Nhiệt độ (°C)', borderColor: '#eab308', backgroundColor: 'rgba(234,179,8,0.1)', data: [], fill: true, tension: 0.3 },
                 { label: 'PM2.5 (µg/m³)', borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.1)', data: [], fill: true, tension: 0.3 },
-                // Đã thay thế đồ thị khí Gas thành đồ thị Độ ẩm (%)
+                // Đổi nhãn thành Độ ẩm (%) với màu sắc riêng biệt
                 { label: 'Độ ẩm (%)', borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', data: [], fill: true, tension: 0.3 }
             ]
         },
@@ -55,7 +55,7 @@ function updateChart(data) {
     envChart.data.labels.push(now);
     envChart.data.datasets[0].data.push(data.temp);
     envChart.data.datasets[1].data.push(data.pm25);
-    // Đẩy dữ liệu độ ẩm vào biểu đồ thay cho khí gas
+    // Đẩy dữ liệu độ ẩm vào dataset thứ 3
     envChart.data.datasets[2].data.push(data.humidity);
     envChart.update();
 }
@@ -168,7 +168,7 @@ function handleSmartHome(data) {
         if (!devFan.classList.contains('active')) {
             devFan.classList.add('active');
             devFan.querySelector('.status-badge').textContent = 'ON (CẤP TỐC)';
-            addLog(`[SMART HOME] Rò rỉ Gas đạt ${data.gas} PPM -> Bật Quạt Thông Gió KHẨN CẤP.`, 'danger');
+            addLog(`[SMART HOME] Rò rỉ Gas đạt ${data.gas} PPM (Ngưỡng >= 500 PPM) -> Bật Quạt Thông Gió KHẨN CẤP.`, 'danger');
         }
     } else {
         devFan.classList.remove('active');
@@ -282,9 +282,8 @@ window.addEventListener('DOMContentLoaded', () => {
         currentRoomIndex = (currentRoomIndex + 1) % rooms.length;
         const currentRoom = rooms[currentRoomIndex];
 
-        // Giả lập Khí Gas: thông thường từ 0-20 PPM, thỉnh thoảng có thể vượt ngưỡng 500 PPM để test cảnh báo
         let simulatedGas = Math.floor(Math.random() * 20);
-        if (Math.random() < 0.08) { // 8% xác suất xảy ra rò rỉ khí gas vượt ngưỡng 500 PPM
+        if (Math.random() < 0.08) { 
             simulatedGas = Math.floor(Math.random() * 150) + 500;
         }
 
