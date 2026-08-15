@@ -1,404 +1,139 @@
-const CONFIG = {
-    PM25_WARN: 50,
-    PM25_DANGER: 100,
-    GAS_DANGER: 500, // Ngưỡng báo động khí gas/khói
-    TEMP_WARN: 35,
-    OBSTACLE_ALERT_DIST: 20
-};
-
-let isRobotPowerOn = true;
-let isManualCharging = false;
-let isAutoCharging = false;
-let robotBattery = 100;
-let lastAlertTime = 0;
-let envChart = null;
-let currentRoomIndex = 0;
-
-// Bộ ghi đè thủ công qua thanh trượt giả lập
-let manualOverride = {
-    enabled: true,
-    gas: 20,
-    temp: 30.0,
-    motionDist: 50
-};
-
-function overrideGas(val) {
-    manualOverride.gas = parseFloat(val);
-    document.getElementById('lbl-sim-gas').textContent = val;
-}
-
-function overrideTemp(val) {
-    manualOverride.temp = parseFloat(val);
-    document.getElementById('lbl-sim-temp').textContent = parseFloat(val).toFixed(1);
-}
-
-function overrideDist(val) {
-    manualOverride.motionDist = parseFloat(val);
-    document.getElementById('lbl-sim-dist').textContent = val;
-}
-
-const rooms = [
-    { id: 'room-living', name: 'Phòng Khách', aqiEl: 'aqi-living' },
-    { id: 'room-bed', name: 'Phòng Ngủ', aqiEl: 'aqi-bed' },
-    { id: 'room-kitchen', name: 'Phòng Bếp', aqiEl: 'aqi-kitchen' },
-    { id: 'room-office', name: 'Phòng Làm Việc', aqiEl: 'aqi-office' }
-];
-
-// Sử dụng Web Audio API để tạo tiếng kêu cảnh báo trực tiếp trên trình duyệt
-function playAlarmSound(type = 'gas') {
-    try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) return;
-        const ctx = new AudioContext();
-
-        const osc = ctx.createOscillator();
-        const gainNode = ctx.createGain();
-
-        osc.connect(gainNode);
-        gainNode.connect(ctx.destination);
-
-        if (type === 'gas') {
-            // Âm thanh cảnh báo khẩn cấp (tần số dồn dập)
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(800, ctx.currentTime);
-            osc.frequency.setValueAtTime(400, ctx.currentTime + 0.15);
-            gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.3);
-        } else if (type === 'obstacle') {
-            // Âm thanh cảnh báo vật cản (nhẹ nhàng hơn)
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(587.33, ctx.currentTime); // Nốt D5
-            gainNode.gain.setValueAtTime(0.15, ctx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.1);
-        }
-    } catch (e) {
-        console.log("Trình duyệt chặn AudioContext do chưa tương tác:", e);
-    }
-}
-
-function initChart() {
-    const ctx = document.getElementById('envChart').getContext('2d');
-    envChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [
-                { label: 'Nhiệt độ (°C)', borderColor: '#eab308', backgroundColor: 'rgba(234,179,8,0.1)', data: [], fill: true, tension: 0.3 },
-                { label: 'PM2.5 (µg/m³)', borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.1)', data: [], fill: true, tension: 0.3 },
-                { label: 'Độ ẩm (%)', borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', data: [], fill: true, tension: 0.3 }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            scales: {
-                x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
-                y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }
-            },
-            plugins: { legend: { labels: { color: '#f8fafc', font: { size: 11 } } } }
-        }
-    });
-}
-
-function updateChart(data) {
-    if (!envChart) return;
-    const now = new Date().toLocaleTimeString();
-    if (envChart.data.labels.length > 7) {
-        envChart.data.labels.shift();
-        envChart.data.datasets.forEach(ds => ds.data.shift());
-    }
-    envChart.data.labels.push(now);
-    envChart.data.datasets[0].data.push(data.temp);
-    envChart.data.datasets[1].data.push(data.pm25);
-    envChart.data.datasets[2].data.push(data.humidity);
-    envChart.update();
-}
-
-function addLog(msg, type = 'info') {
-    const logBox = document.getElementById('log-console');
-    if (!logBox) return;
-    const timeStr = new Date().toLocaleTimeString();
-    const p = document.createElement('p');
-    p.className = `log-item ${type}`;
-    p.textContent = `[${timeStr}] ${msg}`;
-    logBox.appendChild(p);
-    logBox.scrollTop = logBox.scrollHeight;
-}
-
-function processBattery() {
-    const cardBat = document.getElementById('card-battery');
+/* ================= BẢNG MÀU CHỦ ĐẠO ================= */
+:root {
+    --bg-color: #0f172a;         /* Nền tổng thể xanh đen */
+    --card-bg: #1e293b;          /* Nền thẻ */
+    --card-inner: #0f172a;       /* Nền trong thẻ */
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
     
-    if (isManualCharging || isAutoCharging) {
-        if (robotBattery < 100) {
-            robotBattery += Math.floor(Math.random() * 3) + 3;
-            if (robotBattery >= 100) {
-                robotBattery = 100;
-                isAutoCharging = false;
-                isManualCharging = false;
-                document.getElementById('btn-charge').textContent = "Gọi Về Sạc";
-                addLog("[BATTERY] Pin đã đầy 100%. Tự động ngắt sạc.", "info");
-            }
-        }
-    } else if (isRobotPowerOn) {
-        if (robotBattery > 0) {
-            robotBattery -= Math.floor(Math.random() * 2) + 1;
-            if (robotBattery < 0) robotBattery = 0;
-        }
-
-        if (robotBattery <= 10 && !isAutoCharging) {
-            isAutoCharging = true;
-            addLog(`⚡ [BATTERY] Pin nguy cấp (${robotBattery}%)! Kích hoạt chế độ Tự quay về Trạm sạc.`, 'danger');
-        }
-    }
-
-    document.getElementById('val-battery').textContent = robotBattery;
-    cardBat.classList.remove('theme-green', 'theme-yellow', 'theme-red');
-    if (robotBattery <= 10) cardBat.classList.add('theme-red');
-    else if (robotBattery <= 30) cardBat.classList.add('theme-yellow');
-    else cardBat.classList.add('theme-green');
+    /* Màu sắc trạng thái */
+    --color-blue: #38bdf8;
+    --color-green: #22c55e;
+    --color-yellow: #eab308;
+    --color-red: #ef4444;
+    --border-color: #334155;
 }
 
-function updateMetricsColors(data) {
-    const cardGas = document.getElementById('card-gas');
-    const cardPm25 = document.getElementById('card-pm25');
-    const cardTemp = document.getElementById('card-temp');
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+body { background-color: var(--bg-color); color: var(--text-primary); padding: 20px; transition: background-color 0.3s; }
+.container { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
 
-    cardGas.classList.remove('theme-green', 'theme-yellow', 'theme-red');
-    if (data.gas >= CONFIG.GAS_DANGER) cardGas.classList.add('theme-red');
-    else if (data.gas > 100) cardGas.classList.add('theme-yellow');
-    else cardGas.classList.add('theme-green');
-
-    cardPm25.classList.remove('theme-green', 'theme-yellow', 'theme-red');
-    if (data.pm25 >= CONFIG.PM25_DANGER) cardPm25.classList.add('theme-red');
-    else if (data.pm25 >= CONFIG.PM25_WARN) cardPm25.classList.add('theme-yellow');
-    else cardPm25.classList.add('theme-green');
-
-    cardTemp.classList.remove('theme-green', 'theme-yellow', 'theme-red');
-    if (data.temp >= CONFIG.TEMP_WARN) cardTemp.classList.add('theme-yellow');
-    else cardTemp.classList.add('theme-green');
+/* ================= BANNER KHẨN CẤP ================= */
+.emergency-banner {
+    position: fixed; top: 0; left: 0; width: 100%; z-index: 9999;
+    background-color: var(--color-red); color: white;
+    padding: 12px 20px; text-align: center; font-weight: bold; font-size: 1.1rem;
+    box-shadow: 0 4px 15px rgba(239, 68, 68, 0.6); animation: pulseBg 0.6s infinite alternate;
 }
+.emergency-banner.hidden { display: none; }
+.banner-content { display: flex; justify-content: center; align-items: center; gap: 15px; }
+.btn-dismiss { background: white; color: var(--color-red); border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+@keyframes pulseBg { 0% { background: #ef4444; } 100% { background: #7f1d1d; } }
 
-function updateHeatmap(room, data) {
-    rooms.forEach(r => document.getElementById(r.id)?.classList.remove('active-robot'));
+body.alarm-active { animation: screenFlash 1s infinite alternate; }
+@keyframes screenFlash { 0% { background-color: #0f172a; } 100% { background-color: #2a0a0a; } }
 
-    const activeBox = document.getElementById(room.id);
-    const aqiText = document.getElementById(room.aqiEl);
+/* ================= HEADER & ĐIỀU KHIỂN ================= */
+header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); }
+.logo { display: flex; align-items: center; gap: 12px; }
+.logo i { font-size: 2.2rem; color: var(--color-blue); }
+.logo h1 { font-size: 1.5rem; font-weight: 700; }
+.logo h1 span { color: var(--color-blue); font-weight: 300; }
+.header-right { display: flex; gap: 15px; align-items: center; }
 
-    if (activeBox) {
-        activeBox.classList.add('active-robot');
-        activeBox.classList.remove('status-good', 'status-warn', 'status-danger');
+.btn { border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: white; transition: 0.2s; }
+.btn-export { background: #10b981; }
+.btn-ai-speak { background: linear-gradient(135deg, #8b5cf6, #6366f1); }
+.btn:hover { opacity: 0.8; }
 
-        if (data.gas >= CONFIG.GAS_DANGER || data.pm25 > CONFIG.PM25_DANGER) {
-            activeBox.classList.add('status-danger');
-            aqiText.textContent = "AQI: 🔴 Nguy hiểm!";
-        } else if (data.pm25 > CONFIG.PM25_WARN || data.temp > CONFIG.TEMP_WARN) {
-            activeBox.classList.add('status-warn');
-            aqiText.textContent = "AQI: 🟡 Cảnh báo";
-        } else {
-            activeBox.classList.add('status-good');
-            aqiText.textContent = "AQI: 🟢 Tốt";
-        }
-    }
-}
+.power-panel { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.05); padding: 8px 15px; border-radius: 8px; border: 1px solid var(--border-color); }
+.switch { position: relative; display: inline-block; width: 42px; height: 22px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #475569; transition: .3s; border-radius: 22px; }
+.slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+input:checked + .slider { background-color: var(--color-green); }
+input:checked + .slider:before { transform: translateX(20px); }
+#robot-state-text { font-size: 0.9rem; font-weight: bold; color: var(--color-green); width: 130px;}
 
-function handleSmartHome(data) {
-    const devPurifier = document.getElementById('dev-air-purifier');
-    const devFan = document.getElementById('dev-fan');
-    const devAc = document.getElementById('dev-ac');
+/* ================= THẺ CHỈ SỐ MÔI TRƯỜNG ================= */
+.metrics-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; }
+.metric-card { background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px; padding: 12px; position: relative; transition: all 0.3s; }
+.metric-info label { font-size: 0.75rem; color: var(--text-secondary); display: block; margin-bottom: 5px; font-weight: bold;}
+.metric-info .value { font-size: 1.4rem; font-weight: bold; }
+.metric-info .unit { font-size: 0.75rem; color: var(--text-secondary); }
+.metric-card .icon { position: absolute; top: 12px; right: 12px; font-size: 1.3rem; opacity: 0.8; }
 
-    if (data.pm25 > CONFIG.PM25_WARN) {
-        if (!devPurifier.classList.contains('active')) {
-            devPurifier.classList.add('active');
-            devPurifier.querySelector('.status-badge').textContent = 'ON';
-            addLog(`[SMART HOME] Bụi cao -> Tự động bật Máy Lọc Khí.`, 'warn');
-        }
-    } else {
-        devPurifier.classList.remove('active');
-        devPurifier.querySelector('.status-badge').textContent = 'OFF';
-    }
+.theme-green { border-color: var(--color-green); background: rgba(34, 197, 94, 0.05); }
+.theme-green .value { color: var(--color-green); }
 
-    if (data.gas >= CONFIG.GAS_DANGER) {
-        if (!devFan.classList.contains('active')) {
-            devFan.classList.add('active');
-            devFan.querySelector('.status-badge').textContent = 'ON (CẤP TỐC)';
-            addLog(`[SMART HOME] Rò rỉ Gas đạt ${data.gas} PPM (&ge; 500 PPM) -> Bật Quạt Thông Gió KHẨN CẤP.`, 'danger');
-        }
-    } else {
-        devFan.classList.remove('active');
-        devFan.querySelector('.status-badge').textContent = 'OFF';
-    }
+.theme-yellow { border-color: var(--color-yellow); background: rgba(234, 179, 8, 0.1); }
+.theme-yellow .value { color: var(--color-yellow); }
 
-    if (data.temp > CONFIG.TEMP_WARN) {
-        if (!devAc.classList.contains('active')) {
-            devAc.classList.add('active');
-            devAc.querySelector('.status-badge').textContent = 'ON';
-        }
-    } else {
-        devAc.classList.remove('active');
-        devAc.querySelector('.status-badge').textContent = 'OFF';
-    }
-}
+.theme-red { border-color: var(--color-red); background: rgba(239, 68, 68, 0.2); animation: boxBlink 0.6s infinite alternate; }
+.theme-red .value { color: var(--color-red); }
 
-function updateAIAssistant(data) {
-    const aiMessage = document.getElementById('ai-message');
-    const aiStatus = document.getElementById('ai-status');
+.theme-blue { border-color: var(--color-blue); background: rgba(56, 189, 248, 0.05); }
+.theme-blue .value { color: var(--color-blue); }
 
-    if (data.gas >= CONFIG.GAS_DANGER) {
-        aiStatus.textContent = "⚠️ CẢNH BÁO KHẨN CẤP";
-        aiMessage.textContent = `PHÁT HIỆN RÒ RỈ GAS (${data.gas} PPM)! Đã kích hoạt quạt thông gió và gửi tin nhắn khẩn cấp!`;
-    } else if (data.pm25 > CONFIG.PM25_WARN) {
-        aiStatus.textContent = "Đang xử lý...";
-        aiMessage.textContent = "Chất lượng không khí kém (Bụi mịn cao). Tôi đã bật máy lọc không khí để bảo vệ sức khỏe.";
-    } else if (data.temp > CONFIG.TEMP_WARN) {
-        aiStatus.textContent = "Đang làm mát...";
-        aiMessage.textContent = "Nhiệt độ phòng tăng cao. Tôi đã bật điều hòa để đảm bảo sự thoải mái.";
-    } else {
-        aiStatus.textContent = "Đang giám sát ổn định...";
-        aiMessage.textContent = "Môi trường hiện tại rất tốt. Tôi vẫn đang tiếp tục theo dõi các chỉ số xung quanh.";
-    }
-}
+@keyframes boxBlink { 0% { box-shadow: 0 0 2px var(--color-red); } 100% { box-shadow: 0 0 15px var(--color-red); } }
 
-function speakAIStatus() {
-    if (!('speechSynthesis' in window)) {
-        alert("Trình duyệt không hỗ trợ đọc giọng nói!");
-        return;
-    }
-    window.speechSynthesis.cancel();
-    
-    const temp = document.getElementById('val-temp').textContent;
-    const pm25 = document.getElementById('val-pm25').textContent;
-    const gas = document.getElementById('val-gas').textContent;
-    const motionDist = document.getElementById('val-motion').textContent;
-    const roomName = rooms[currentRoomIndex].name;
-    
-    let text = `Trợ lý AuraBot xin báo cáo. Robot đang ở ${roomName}. Pin còn ${robotBattery} phần trăm. Khoảng cách vật cản phía trước là ${motionDist} xăng-ti-mét. Nhiệt độ phòng là ${temp} độ C. Bụi mịn P M 2.5 là ${pm25}. `;
-    
-    if (parseFloat(gas) >= CONFIG.GAS_DANGER) {
-        text += `Báo động đỏ! Phát hiện rò rỉ khí gas nguy hiểm ở mức ${gas} P P M! Vui lòng kiểm tra ngay!`;
-    } else if (parseFloat(pm25) >= CONFIG.PM25_WARN) {
-        text += "Cảnh báo không khí ô nhiễm nhẹ. Hệ thống đã tự động bật máy lọc không khí.";
-    } else {
-        text += "Chất lượng môi trường hiện tại đang rất tốt.";
-    }
+.battery-actions { margin-top: 8px; display: flex; gap: 4px; }
+.btn-sm { padding: 3px 6px; font-size: 0.7rem; border-radius: 4px; border: none; background: var(--card-inner); color: white; cursor: pointer; border: 1px solid var(--border-color); }
+.btn-sm:hover { background: var(--color-blue); border-color: var(--color-blue); }
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'vi-VN';
-    window.speechSynthesis.speak(utterance);
-    addLog("[AI VOICE] Trợ lý AI đang đọc thông số hệ thống.", "info");
-}
+/* ================= TRỢ LÝ AI & HEATMAP ================= */
+.middle-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; }
+.card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; }
+.card h2 { font-size: 1.05rem; color: var(--text-primary); margin-bottom: 15px; display: flex; align-items: center; gap: 8px; }
 
-function toggleRobotPower(cb) {
-    isRobotPowerOn = cb.checked;
-    const textEl = document.getElementById('robot-state-text');
-    if (isRobotPowerOn) {
-        textEl.textContent = "Đang hoạt động";
-        textEl.style.color = "var(--color-green)";
-        addLog("[SYSTEM] Bật hệ thống Robot.", 'info');
-    } else {
-        textEl.textContent = "Đã tắt (OFF)";
-        textEl.style.color = "var(--text-secondary)";
-        addLog("[SYSTEM] Đã tắt nguồn Robot.", 'warn');
-    }
-}
+.floorplan-container { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; height: 180px; }
+.room-box { background: var(--card-inner); border: 2px solid var(--border-color); border-radius: 8px; padding: 15px; position: relative; transition: all 0.3s; display: flex; flex-direction: column; justify-content: center; }
+.room-title { font-size: 1rem; font-weight: bold; margin-bottom: 5px; color: var(--text-primary); }
+.room-aqi { font-size: 0.85rem; color: var(--text-secondary); }
+.robot-marker { display: none; position: absolute; bottom: 10px; right: 10px; background: var(--color-blue); color: black; font-size: 0.75rem; font-weight: bold; padding: 4px 8px; border-radius: 12px; }
 
-function toggleManualCharging() {
-    isManualCharging = !isManualCharging;
-    document.getElementById('btn-charge').textContent = isManualCharging ? "Dừng Sạc" : "Gọi Về Sạc";
-    addLog(isManualCharging ? "[BATTERY] Bật chế độ sạc thủ công." : "[BATTERY] Tắt sạc thủ công.");
-}
+.room-box.active-robot .robot-marker { display: block; }
+.room-box.status-good { border-color: var(--color-green); background: rgba(34, 197, 94, 0.05); }
+.room-box.status-warn { border-color: var(--color-yellow); background: rgba(234, 179, 8, 0.1); }
+.room-box.status-danger { border-color: var(--color-red); background: rgba(239, 68, 68, 0.2); }
 
-function resetBattery() {
-    robotBattery = 100;
-    document.getElementById('val-battery').textContent = "100";
-    addLog("[BATTERY] Đã khôi phục mức Pin 100%.");
-}
+/* Giao diện khối trợ lý AI */
+.assistant-interface { display: flex; flex-direction: column; gap: 10px; text-align: center; justify-content: center; height: 130px; }
+.assistant-status { font-size: 0.8rem; color: var(--color-blue); font-weight: bold; }
+.assistant-message { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; font-style: italic; font-size: 0.85rem; color: var(--text-primary); border: 1px solid var(--border-color); }
+.voice-wave { display: flex; justify-content: center; gap: 4px; margin-top: 5px; }
+.wave { width: 4px; height: 12px; background: var(--color-blue); animation: wave 1s infinite alternate; }
+.wave:nth-child(2) { animation-delay: 0.2s; }
+.wave:nth-child(3) { animation-delay: 0.4s; }
+@keyframes wave { from { transform: scaleY(0.5); } to { transform: scaleY(1.5); } }
 
-function dismissEmergency() {
-    document.getElementById('emergency-banner').classList.add('hidden');
-    document.body.classList.remove('alarm-active');
-    addLog("[EMERGENCY] Người dùng đã xác nhận tắt báo động đỏ.", 'warn');
-}
+/* Thiết bị Smart Home */
+.devices-grid { display: flex; flex-direction: column; gap: 12px; }
+.device-item { background: var(--card-inner); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 15px; display: flex; align-items: center; gap: 15px; transition: all 0.3s; }
+.dev-icon { font-size: 1.5rem; color: var(--text-secondary); width: 30px; text-align: center; }
+.dev-details { flex-grow: 1; }
+.dev-details h4 { font-size: 0.9rem; color: var(--text-primary); }
+.dev-details span { font-size: 0.75rem; color: var(--text-secondary); }
+.status-badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; background: #334155; color: white;}
 
-function exportToExcel() {
-    alert("Xuất báo cáo dữ liệu lịch sử thành công!");
-    addLog("[EXCEL] Xuất báo cáo CSV thành công.", "info");
-}
+.device-item.active { border-color: var(--color-green); background: rgba(34, 197, 94, 0.1); }
+.device-item.active .dev-icon { color: var(--color-green); }
+.device-item.active .status-badge { background: var(--color-green); color: black; }
 
-window.addEventListener('DOMContentLoaded', () => {
-    initChart();
+/* ================= BOTTOM GRID ================= */
+.bottom-grid { display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 20px; }
 
-    setInterval(() => {
-        processBattery();
+.notify-channels { display: flex; flex-direction: column; gap: 10px; }
+.channel-card { background: var(--card-inner); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; display: flex; align-items: center; gap: 12px; }
+.channel-card.active { border-color: var(--color-blue); }
+.channel-icon { font-size: 1.5rem; color: var(--color-blue); }
+.channel-info h4 { font-size: 0.85rem; }
+.channel-status { font-size: 0.75rem; color: var(--color-green); }
 
-        if (!isRobotPowerOn) return;
+.chart-container { position: relative; height: 200px; width: 100%; }
 
-        currentRoomIndex = (currentRoomIndex + 1) % rooms.length;
-        const currentRoom = rooms[currentRoomIndex];
-
-        // Lấy giá trị từ thanh trượt giả lập thủ công
-        const sensorData = {
-            temp: manualOverride.temp,
-            humidity: parseFloat((Math.random() * (75 - 50) + 50).toFixed(1)),
-            pm25: parseFloat((Math.random() * (110 - 15) + 15).toFixed(1)),
-            co2: parseFloat((Math.random() * (1300 - 400) + 400).toFixed(0)),
-            gas: manualOverride.gas,
-            motionDist: manualOverride.motionDist
-        };
-
-        document.getElementById('val-temp').textContent = sensorData.temp;
-        document.getElementById('val-humidity').textContent = sensorData.humidity;
-        document.getElementById('val-pm25').textContent = sensorData.pm25;
-        document.getElementById('val-co2').textContent = sensorData.co2;
-        document.getElementById('val-gas').textContent = sensorData.gas;
-        document.getElementById('val-motion').textContent = sensorData.motionDist;
-
-        const cardMotion = document.getElementById('card-motion');
-        const motionStatusText = document.getElementById('motion-status');
-        
-        cardMotion.classList.remove('theme-green', 'theme-yellow', 'theme-red', 'theme-blue');
-        
-        if (sensorData.motionDist <= CONFIG.OBSTACLE_ALERT_DIST) {
-            cardMotion.classList.add('theme-red');
-            motionStatusText.textContent = "⚠️ Vật cản gần! Đổi hướng.";
-            
-            // Kích hoạt âm thanh cảnh báo vật cản
-            playAlarmSound('obstacle');
-
-            addLog(`🤖 [NAVIGATION] Vật cản ở khoảng cách ${sensorData.motionDist}cm! Robot né tránh.`, 'warn');
-        } else if (sensorData.motionDist <= 50) {
-            cardMotion.classList.add('theme-yellow');
-            motionStatusText.textContent = "🔍 Vật cản tầm trung.";
-        } else {
-            cardMotion.classList.add('theme-green');
-            motionStatusText.textContent = "✅ Đường đi thoáng.";
-        }
-
-        const banner = document.getElementById('emergency-banner');
-        if (sensorData.gas >= CONFIG.GAS_DANGER) {
-            banner.classList.remove('hidden');
-            document.body.classList.add('alarm-active');
-            
-            // Kích hoạt âm thanh báo động khẩn cấp khí gas
-            playAlarmSound('gas');
-
-            addLog(`🚨 [BÁO ĐỘNG ĐỎ] Rò rỉ Gas (${sensorData.gas} PPM &ge; 500 PPM) tại ${currentRoom.name}!`, 'danger');
-            
-            const now = Date.now();
-            if (now - lastAlertTime > 20000) {
-                addLog(`📲 [TELEGRAM/ZALO] Đã phát tin nhắn cấp cứu khẩn cấp tới Điện thoại chủ nhà!`, 'danger');
-                lastAlertTime = now;
-            }
-        }
-
-        updateMetricsColors(sensorData);
-        updateHeatmap(currentRoom, sensorData);
-        handleSmartHome(sensorData);
-        updateAIAssistant(sensorData);
-        updateChart(sensorData);
-
-        addLog(`[SENSORS] Vị trí: ${currentRoom.name} | Temp=${sensorData.temp}°C | Humidity=${sensorData.humidity}% | Gas=${sensorData.gas}PPM`);
-    }, 3000);
-});
+.log-console { background: #020617; border-radius: 6px; padding: 12px; height: 200px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 0.8rem; border: 1px solid var(--border-color); }
+.log-item { margin-bottom: 6px; line-height: 1.4; color: var(--text-secondary); }
+.log-item.info { color: var(--color-blue); }
+.log-item.warn { color: var(--color-yellow); }
+.log-item.danger { color: var(--color-red); font-weight: bold; }
