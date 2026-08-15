@@ -1,7 +1,7 @@
 const CONFIG = {
     PM25_WARN: 50,
     PM25_DANGER: 100,
-    GAS_DANGER: 300,
+    GAS_DANGER: 500, // Đã cập nhật ngưỡng báo động khí gas lên 500 PPM
     TEMP_WARN: 35,
     OBSTACLE_ALERT_DIST: 20
 };
@@ -30,7 +30,8 @@ function initChart() {
             datasets: [
                 { label: 'Nhiệt độ (°C)', borderColor: '#eab308', backgroundColor: 'rgba(234,179,8,0.1)', data: [], fill: true, tension: 0.3 },
                 { label: 'PM2.5 (µg/m³)', borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.1)', data: [], fill: true, tension: 0.3 },
-                { label: 'Khí Gas (PPM)', borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', data: [], fill: true, tension: 0.3 }
+                // Đã thay thế đồ thị khí Gas thành đồ thị Độ ẩm (%)
+                { label: 'Độ ẩm (%)', borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', data: [], fill: true, tension: 0.3 }
             ]
         },
         options: {
@@ -54,7 +55,8 @@ function updateChart(data) {
     envChart.data.labels.push(now);
     envChart.data.datasets[0].data.push(data.temp);
     envChart.data.datasets[1].data.push(data.pm25);
-    envChart.data.datasets[2].data.push(data.gas);
+    // Đẩy dữ liệu độ ẩm vào biểu đồ thay cho khí gas
+    envChart.data.datasets[2].data.push(data.humidity);
     envChart.update();
 }
 
@@ -110,7 +112,7 @@ function updateMetricsColors(data) {
 
     cardGas.classList.remove('theme-green', 'theme-yellow', 'theme-red');
     if (data.gas >= CONFIG.GAS_DANGER) cardGas.classList.add('theme-red');
-    else if (data.gas > 50) cardGas.classList.add('theme-yellow');
+    else if (data.gas > 100) cardGas.classList.add('theme-yellow');
     else cardGas.classList.add('theme-green');
 
     cardPm25.classList.remove('theme-green', 'theme-yellow', 'theme-red');
@@ -166,7 +168,7 @@ function handleSmartHome(data) {
         if (!devFan.classList.contains('active')) {
             devFan.classList.add('active');
             devFan.querySelector('.status-badge').textContent = 'ON (CẤP TỐC)';
-            addLog(`[SMART HOME] Rò rỉ Gas -> Bật Quạt Thông Gió KHẨN CẤP.`, 'danger');
+            addLog(`[SMART HOME] Rò rỉ Gas đạt ${data.gas} PPM -> Bật Quạt Thông Gió KHẨN CẤP.`, 'danger');
         }
     } else {
         devFan.classList.remove('active');
@@ -184,17 +186,16 @@ function handleSmartHome(data) {
     }
 }
 
-// CẬP NHẬT TRỢ LÝ AI THÔNG MINH
 function updateAIAssistant(data) {
     const aiMessage = document.getElementById('ai-message');
     const aiStatus = document.getElementById('ai-status');
 
     if (data.gas >= CONFIG.GAS_DANGER) {
         aiStatus.textContent = "⚠️ CẢNH BÁO KHẨN CẤP";
-        aiMessage.textContent = "PHÁT HIỆN RÒ RỈ GAS! Đã kích hoạt quạt thông gió và gửi tin nhắn khẩn cho chủ nhà!";
+        aiMessage.textContent = `PHÁT HIỆN RÒ RỈ GAS (${data.gas} PPM)! Đã kích hoạt quạt thông gió và gửi tin nhắn khẩn cấp!`;
     } else if (data.pm25 > CONFIG.PM25_WARN) {
         aiStatus.textContent = "Đang xử lý...";
-        aiMessage.textContent = "Chất lượng không khí kém (Bụi mịn cao). Tôi đã bật máy lọc không khí để bảo vệ sức khỏe gia đình.";
+        aiMessage.textContent = "Chất lượng không khí kém (Bụi mịn cao). Tôi đã bật máy lọc không khí để bảo vệ sức khỏe.";
     } else if (data.temp > CONFIG.TEMP_WARN) {
         aiStatus.textContent = "Đang làm mát...";
         aiMessage.textContent = "Nhiệt độ phòng tăng cao. Tôi đã bật điều hòa để đảm bảo sự thoải mái.";
@@ -281,9 +282,10 @@ window.addEventListener('DOMContentLoaded', () => {
         currentRoomIndex = (currentRoomIndex + 1) % rooms.length;
         const currentRoom = rooms[currentRoomIndex];
 
-        let simulatedGas = Math.floor(Math.random() * 6);
-        if (Math.random() < 0.10) {
-            simulatedGas = Math.floor(Math.random() * 300) + 300;
+        // Giả lập Khí Gas: thông thường từ 0-20 PPM, thỉnh thoảng có thể vượt ngưỡng 500 PPM để test cảnh báo
+        let simulatedGas = Math.floor(Math.random() * 20);
+        if (Math.random() < 0.08) { // 8% xác suất xảy ra rò rỉ khí gas vượt ngưỡng 500 PPM
+            simulatedGas = Math.floor(Math.random() * 150) + 500;
         }
 
         const simulatedDist = Math.floor(Math.random() * 145) + 5;
@@ -325,7 +327,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (sensorData.gas >= CONFIG.GAS_DANGER) {
             banner.classList.remove('hidden');
             document.body.classList.add('alarm-active');
-            addLog(`🚨 [BÁO ĐỘNG ĐỎ] Phát hiện rò rỉ Gas (${sensorData.gas} PPM) tại ${currentRoom.name}!`, 'danger');
+            addLog(`🚨 [BÁO ĐỘNG ĐỎ] Phát hiện rò rỉ Gas vượt ngưỡng (${sensorData.gas} PPM >= 500 PPM) tại ${currentRoom.name}!`, 'danger');
             
             const now = Date.now();
             if (now - lastAlertTime > 20000) {
@@ -337,9 +339,9 @@ window.addEventListener('DOMContentLoaded', () => {
         updateMetricsColors(sensorData);
         updateHeatmap(currentRoom, sensorData);
         handleSmartHome(sensorData);
-        updateAIAssistant(sensorData); // Cập nhật bảng trợ lý AI
+        updateAIAssistant(sensorData);
         updateChart(sensorData);
 
-        addLog(`[SENSORS] Vị trí: ${currentRoom.name} | Temp=${sensorData.temp}°C | PM2.5=${sensorData.pm25} | Gas=${sensorData.gas} | Cản=${sensorData.motionDist}cm`);
+        addLog(`[SENSORS] Vị trí: ${currentRoom.name} | Temp=${sensorData.temp}°C | Humidity=${sensorData.humidity}% | Gas=${sensorData.gas}PPM`);
     }, 3000);
 });
